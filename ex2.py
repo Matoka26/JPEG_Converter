@@ -1,6 +1,8 @@
 import numpy as np
 from scipy import misc, ndimage
 from utils import jpeg_decode, jpeg_encode
+import matplotlib.pyplot as plt
+
 
 if __name__ == "__main__":
     X = misc.face()
@@ -23,5 +25,5 @@ if __name__ == "__main__":
                      [99, 99, 99, 99, 99, 99, 99, 99],
                      [99, 99, 99, 99, 99, 99, 99, 99]])
 
-    X = jpeg_encode(X, Q_luminance, Q_chrominance, 1)
-    X = jpeg_decode(X, Q_luminance, Q_chrominance, 1)
+    X = jpeg_encode(X, Q_luminance, Q_chrominance, True)
+    X = jpeg_decode(X, Q_luminance, Q_chrominance, True)
