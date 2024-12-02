@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import dctn, idctn
-
+from sklearn.metrics import mean_squared_error
 
 def jpeg_mono_decode(Y: np.ndarray, Q_jpeg: np.ndarray, show_compressed_img=0) -> np.ndarray:
     i_lim, j_lim = Y.shape
@@ -93,7 +93,8 @@ def ycbcr_to_rgb(X:np.ndarray) -> np.ndarray:
     return np.clip(X_rgb, 0, 255).astype(np.uint8)
 
 
-def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, print_freq_comps_cnt=0) -> np.ndarray:
+def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, MSE_trashold: float=None , print_freq_comps_cnt=0) -> np.ndarray:
+    mse_coef = 1
 
     # color space conversion
     X_ycbcr = rgb_to_ycbcr(X)
@@ -103,13 +104,43 @@ def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, print_freq_com
     Cb = X_ycbcr[:, :, 1]
     Cr = X_ycbcr[:, :, 2]
 
-    # encode channels
-    Y =  jpeg_mono_encode(Y, Q_Y)
-    Cb = jpeg_mono_encode(Cb, Q_Ch)
-    Cr = jpeg_mono_encode(Cr, Q_Ch)
+    prev_mse = -1
+    i = 0;
+    while(True):
+        # encode channels
+        Y_enc =  jpeg_mono_encode(Y, Q_Y * mse_coef)
+        Cb_enc = jpeg_mono_encode(Cb, Q_Ch * mse_coef)
+        Cr_enc = jpeg_mono_encode(Cr, Q_Ch * mse_coef)
 
-    # reconstruct image
-    X_jpeg = np.stack((Y, Cb, Cr), axis=-1)
+        # reconstruct image
+        X_jpeg = np.stack((Y_enc, Cb_enc, Cr_enc), axis=-1)
+
+        # exit if it is not specified
+        if MSE_trashold is None:
+            break
+
+
+        # get MSE for decoded iamge
+        X_decoded = jpeg_decode(X_jpeg, Q_Y, Q_Ch)
+        currect_mse = image_MSE(X, X_decoded)
+
+        print(f'Iteration {i}, MSE: {round(currect_mse, 2)}, coef: {mse_coef}')
+
+        if prev_mse == currect_mse:
+            raise ValueError("Couldnt reach MSE thrashold")
+
+        # if it touches the thrashold, exit
+        tolerance = 0.3
+        if abs(currect_mse - MSE_trashold) < tolerance:
+            break
+
+        # update quantization matrices coeficient
+        if currect_mse < MSE_trashold:
+            mse_coef *= 1.401
+        else:
+            mse_coef /= 1.219
+        i += 1
+        prev_mse = currect_mse
 
     # print non-zero components
     if print_freq_comps_cnt:
@@ -144,3 +175,7 @@ def jpeg_decode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, show_compresse
         plt.show()
 
     return X_jpeg
+
+
+def image_MSE(X: np.ndarray, Y: np.ndarray) -> float:
+    return mean_squared_error(X.flatten(), Y.flatten())

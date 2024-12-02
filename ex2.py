@@ -1,11 +1,11 @@
 import numpy as np
 from scipy import misc, ndimage
-from utils import jpeg_decode, jpeg_encode
+from utils import jpeg_decode, jpeg_encode, image_MSE
 import matplotlib.pyplot as plt
 
 
 if __name__ == "__main__":
-    X = misc.face()
+    Y = X = misc.face()
 
     Q_luminance = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
                    [12, 12, 14, 19, 26, 28, 60, 55],
@@ -25,5 +25,5 @@ if __name__ == "__main__":
                      [99, 99, 99, 99, 99, 99, 99, 99],
                      [99, 99, 99, 99, 99, 99, 99, 99]])
 
-    X = jpeg_encode(X, Q_luminance, Q_chrominance, True)
-    X = jpeg_decode(X, Q_luminance, Q_chrominance, True)
+    X = jpeg_encode(X, Q_luminance, Q_chrominance, MSE_trashold=300)
+    X = jpeg_decode(X, Q_luminance, Q_chrominance, 1)
