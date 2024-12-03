@@ -1,11 +1,35 @@
 import numpy as np
+import cv2 as cv
 import matplotlib.pyplot as plt
 from scipy.fft import dctn, idctn
 from sklearn.metrics import mean_squared_error
 
-def jpeg_mono_decode(Y: np.ndarray, Q_jpeg: np.ndarray, show_compressed_img=0) -> np.ndarray:
+# Standard Quantization table for Luminance Spectrum
+Q_luminance = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
+                        [12, 12, 14, 19, 26, 28, 60, 55],
+                        [14, 13, 16, 24, 40, 57, 69, 56],
+                        [14, 17, 22, 29, 51, 87, 80, 62],
+                        [18, 22, 37, 56, 68, 109, 103, 77],
+                        [24, 35, 55, 64, 81, 104, 113, 92],
+                        [49, 64, 78, 87, 103, 121, 120, 101],
+                        [72, 92, 95, 98, 112, 100, 103, 99]])
+
+# Standard Quantization table for Chrominance Spectrums
+Q_chrominance = np.array([[17, 18, 24, 47, 99, 99, 99, 99],
+                          [18, 21, 26, 66, 99, 99, 99, 99],
+                          [24, 26, 56, 99, 99, 99, 99, 99],
+                          [47, 66, 99, 99, 99, 99, 99, 99],
+                          [99, 99, 99, 99, 99, 99, 99, 99],
+                          [99, 99, 99, 99, 99, 99, 99, 99],
+                          [99, 99, 99, 99, 99, 99, 99, 99],
+                          [99, 99, 99, 99, 99, 99, 99, 99]])
+
+
+def jpeg_mono_decode(Y: np.ndarray, filter_shape: (int,int), show_compressed_img: bool=False) -> np.ndarray:
+    # Decode momo-chromatic channel using the size of the filter previously applied
+
     i_lim, j_lim = Y.shape
-    i_win, j_win = Q_jpeg.shape
+    i_win, j_win = filter_shape
     X_jpeg = np.zeros(Y.shape)
 
     # decode each block
@@ -28,7 +52,9 @@ def jpeg_mono_decode(Y: np.ndarray, Q_jpeg: np.ndarray, show_compressed_img=0) -
     return X_jpeg
 
 
-def jpeg_mono_encode(X: np.ndarray, Q_jpeg: np.ndarray, print_freq_comps_cnt=0) -> np.ndarray:
+def jpeg_mono_encode(X: np.ndarray, Q_jpeg: np.ndarray, print_freq_comps_cnt: bool=False) -> np.ndarray:
+    # Encode mono-chormatic channel using a quantization table
+
     i_lim, j_lim = X.shape
     i_win, j_win = Q_jpeg.shape
     Y_jpeg = np.zeros(X.shape)
@@ -61,6 +87,7 @@ def jpeg_mono_encode(X: np.ndarray, Q_jpeg: np.ndarray, print_freq_comps_cnt=0) 
 
 
 def rgb_to_ycbcr(X: np.ndarray) -> np.ndarray:
+    # Convert RGB to YCbCr Spectrum
 
     Q = np.array([[0.299, 0.587, 0.114],
                   [-0.168736, -0.331264, 0.5],
@@ -78,6 +105,8 @@ def rgb_to_ycbcr(X: np.ndarray) -> np.ndarray:
 
 
 def ycbcr_to_rgb(X:np.ndarray) -> np.ndarray:
+    # Convert YCbCr to RGB Spectrum
+
     Q = np.array([[1, 0, 1.402],
                   [1, -0.344136, -0.714136],
                   [1, 1.772, 0]])
@@ -93,7 +122,10 @@ def ycbcr_to_rgb(X:np.ndarray) -> np.ndarray:
     return np.clip(X_rgb, 0, 255).astype(np.uint8)
 
 
-def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, MSE_trashold: float=None , print_freq_comps_cnt=0) -> np.ndarray:
+def jpeg_encode(X: np.ndarray = Q_luminance, Q_Y: np.ndarray = Q_chrominance, Q_Ch: np.ndarray = Q_chrominance
+                , MSE_trashold: float=None , print_freq_comps_cnt:bool=0) -> np.ndarray:
+    # Encode RGB image
+
     mse_coef = 1
 
     # color space conversion
@@ -105,7 +137,6 @@ def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, MSE_trashold: 
     Cr = X_ycbcr[:, :, 2]
 
     prev_mse = -1
-    i = 0;
     while(True):
         # encode channels
         Y_enc =  jpeg_mono_encode(Y, Q_Y * mse_coef)
@@ -119,12 +150,9 @@ def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, MSE_trashold: 
         if MSE_trashold is None:
             break
 
-
         # get MSE for decoded iamge
-        X_decoded = jpeg_decode(X_jpeg, Q_Y, Q_Ch)
+        X_decoded = jpeg_decode(X_jpeg, Q_Y.shape, Q_Ch.shape)
         currect_mse = image_MSE(X, X_decoded)
-
-        print(f'Iteration {i}, MSE: {round(currect_mse, 2)}, coef: {mse_coef}')
 
         if prev_mse == currect_mse:
             raise ValueError("Couldnt reach MSE thrashold")
@@ -139,7 +167,6 @@ def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, MSE_trashold: 
             mse_coef *= 1.401
         else:
             mse_coef /= 1.219
-        i += 1
         prev_mse = currect_mse
 
     # print non-zero components
@@ -152,7 +179,9 @@ def jpeg_encode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, MSE_trashold: 
     return X_jpeg
 
 
-def jpeg_decode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, show_compressed_img=0) -> np.ndarray:
+def jpeg_decode(X: np.ndarray = Q_luminance, Q_Y_shape: (int,int)=Q_chrominance.shape, Q_Ch_shape: (int,int)=Q_chrominance.shape
+                , show_compressed_img=0) -> np.ndarray:
+    # Decode YCbCr image
 
     # split channels
     Y =  X[:, :, 0]
@@ -160,9 +189,9 @@ def jpeg_decode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, show_compresse
     Cr = X[:, :, 2]
 
     # decode channels
-    Y = jpeg_mono_decode(Y, Q_Y)
-    Cb = jpeg_mono_decode(Cb, Q_Ch)
-    Cr = jpeg_mono_decode(Cr, Q_Ch)
+    Y = jpeg_mono_decode(Y, Q_Y_shape)
+    Cb = jpeg_mono_decode(Cb, Q_Ch_shape)
+    Cr = jpeg_mono_decode(Cr, Q_Ch_shape)
 
     # reconstruct image
     X_jpeg = np.stack((Y, Cb, Cr), axis=-1)
@@ -178,4 +207,56 @@ def jpeg_decode(X: np.ndarray, Q_Y: np.ndarray, Q_Ch: np.ndarray, show_compresse
 
 
 def image_MSE(X: np.ndarray, Y: np.ndarray) -> float:
+    # Get Mean Squared Error of 2 images
     return mean_squared_error(X.flatten(), Y.flatten())
+
+
+def display_video(video_path: str, window_name: str='Video', frame_delay:int =25):
+    # Play video
+
+    cap = cv.VideoCapture(video_path)
+
+    if not cap.isOpened():
+        print("Error: Cannot open video.")
+        return
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        cv.imshow(window_name, frame)
+        if cv.waitKey(frame_delay) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv.destroyAllWindows()
+
+
+def jpeg_video_encode(video_path: str, output_video: str) -> None:
+    # Encode each frame of a video
+
+    cap = cv.VideoCapture(video_path)
+    fps = cap.get(cv.CAP_PROP_FPS)
+
+    if not cap.isOpened():
+        print("Error: Cannot open video.")
+        return
+
+    ret, frame = cap.read()
+
+    if not ret:
+        print("Error: Cannot read the first frame.")
+        return
+
+    video = cv.VideoWriter(output_video, cv.VideoWriter_fourcc(*'mp4v'), fps, frame.shape[:2][::-1])
+    video.write(jpeg_encode(frame))
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        video.write(frame)
+
+    cap.release()
+    video.release()
+    cv.destroyAllWindows()
